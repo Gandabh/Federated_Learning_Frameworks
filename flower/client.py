@@ -34,28 +34,43 @@ class CifarClient(fl.client.NumPyClient):
     def __init__(self, client_id):
         self.client_id = client_id
 
+        # Split the data into training and evaluation sets
+        num_clients = 3
+        idx_start = self.client_id * len(x_train) // num_clients
+        idx_end = (self.client_id + 1) * len(x_train) // num_clients
+
+        self.client_x_train = x_train[idx_start : idx_end]
+        self.client_y_train = y_train[idx_start : idx_end]
+
+        idx_start = self.client_id * len(x_test) // num_clients
+        idx_end = (self.client_id + 1) * len(x_test) // num_clients
+
+        self.client_x_eval = x_test[idx_start : idx_end]
+        self.client_y_eval = y_test[idx_start : idx_end]
+
     def get_parameters(self, config):
         return model.get_weights()
 
     def fit(self, parameters, config):
         model.set_weights(parameters)
-        # Adjust data for each client using the client_id
-        client_x_train = x_train[self.client_id * len(x_train) // 3 : (self.client_id + 1) * len(x_train) // 3]
-        client_y_train = y_train[self.client_id * len(y_train) // 3 : (self.client_id + 1) * len(y_train) // 3]
-        model.fit(client_x_train, client_y_train, epochs=1, batch_size=32)
+        
+        # Train on the client's training data
+        model.fit(self.client_x_train, self.client_y_train, epochs=5, batch_size=32)
+        
         # Log information
         print(f"Client {self.client_id}: Fit complete")
-        return model.get_weights(), len(client_x_train), {}
+        return model.get_weights(), len(self.client_x_train), {}
 
     def evaluate(self, parameters, config):
         model.set_weights(parameters)
-        # Adjust data for each client using the client_id
-        client_x_test = x_test[self.client_id * len(x_test) // 3 : (self.client_id + 1) * len(x_test) // 3]
-        client_y_test = y_test[self.client_id * len(y_test) // 3 : (self.client_id + 1) * len(y_test) // 3]
-        loss, accuracy = model.evaluate(client_x_test, client_y_test)
+        
+        # Evaluate on the client's evaluation data
+        loss, accuracy = model.evaluate(self.client_x_eval, self.client_y_eval)
+        
         # Log information
         print(f"Client {self.client_id}: Evaluation complete - Loss: {loss}, Accuracy: {accuracy}")
-        return loss, len(client_x_test), {"accuracy": accuracy}
+        return loss, len(self.client_x_eval), {"accuracy": accuracy}
+
 
 if __name__ == "__main__":
     # Start Flower clients for 3 nodes
