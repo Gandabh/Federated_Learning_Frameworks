@@ -1,9 +1,15 @@
 import os
 import flwr as fl
 import tensorflow as tf
+import logging
+import sys
 
 # Set TensorFlow to log less
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Define a custom CNN model suitable for CIFAR-10
 def create_custom_model():
@@ -49,16 +55,20 @@ class CifarClient(fl.client.NumPyClient):
         self.client_y_eval = y_test[idx_start : idx_end]
 
     def get_parameters(self, config):
-        return model.get_weights()
+        logger.info(f"Client {self.client_id}: Requesting parameters")
+        weights = model.get_weights()
+        logger.info(f"Client {self.client_id}: Finished parameters")
+        return weights
 
     def fit(self, parameters, config):
+        logger.info(f"Client {self.client_id}: Fit starts")
         model.set_weights(parameters)
         
         # Train on the client's training data
         model.fit(self.client_x_train, self.client_y_train, epochs=5, batch_size=32)
         
         # Log information
-        print(f"Client {self.client_id}: Fit complete")
+        logger.info(f"Client {self.client_id}: Fit complete")
         return model.get_weights(), len(self.client_x_train), {}
 
     def evaluate(self, parameters, config):
@@ -68,11 +78,20 @@ class CifarClient(fl.client.NumPyClient):
         loss, accuracy = model.evaluate(self.client_x_eval, self.client_y_eval)
         
         # Log information
-        print(f"Client {self.client_id}: Evaluation complete - Loss: {loss}, Accuracy: {accuracy}")
+        logger.info(f"Client {self.client_id}: Evaluation complete - Loss: {loss}, Accuracy: {accuracy}")
         return loss, len(self.client_x_eval), {"accuracy": accuracy}
 
-
 if __name__ == "__main__":
-    # Start Flower clients for 3 nodes
-    for client_id in range(3):
+    try:
+        # Parse command-line argument for client ID
+        if len(sys.argv) != 2:
+            print("Usage: python script.py <client_id>")
+            sys.exit(1)
+        
+        client_id = int(sys.argv[1])
+        
+        logger.info(f"Starting client {client_id}")
         fl.client.start_numpy_client(server_address="127.0.0.1:8080", client=CifarClient(client_id))
+        logger.info(f"Client {client_id} finished")
+    except Exception as e:
+        logger.exception("An exception occurred:", exc_info=e)
