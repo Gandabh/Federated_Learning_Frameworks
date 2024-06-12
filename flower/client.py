@@ -25,12 +25,6 @@ def create_custom_model():
     ])
     return model
 
-# Create the model
-model = create_custom_model()
-
-# Compile the model
-model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-
 # Load CIFAR-10 data
 (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
 x_train, x_test = x_train / 255.0, x_test / 255.0  # Normalize pixel values to [0, 1]
@@ -39,43 +33,45 @@ x_train, x_test = x_train / 255.0, x_test / 255.0  # Normalize pixel values to [
 class CifarClient(fl.client.NumPyClient):
     def __init__(self, client_id):
         self.client_id = client_id
+        self.model = create_custom_model()
+        self.model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
 
         # Split the data into training and evaluation sets
         num_clients = 3
         idx_start = self.client_id * len(x_train) // num_clients
         idx_end = (self.client_id + 1) * len(x_train) // num_clients
 
-        self.client_x_train = x_train[idx_start : idx_end]
-        self.client_y_train = y_train[idx_start : idx_end]
+        self.client_x_train = x_train[idx_start:idx_end]
+        self.client_y_train = y_train[idx_start:idx_end]
 
         idx_start = self.client_id * len(x_test) // num_clients
         idx_end = (self.client_id + 1) * len(x_test) // num_clients
 
-        self.client_x_eval = x_test[idx_start : idx_end]
-        self.client_y_eval = y_test[idx_start : idx_end]
+        self.client_x_eval = x_test[idx_start:idx_end]
+        self.client_y_eval = y_test[idx_start:idx_end]
 
     def get_parameters(self, config):
         logger.info(f"Client {self.client_id}: Requesting parameters")
-        weights = model.get_weights()
+        weights = self.model.get_weights()
         logger.info(f"Client {self.client_id}: Finished parameters")
         return weights
 
     def fit(self, parameters, config):
         logger.info(f"Client {self.client_id}: Fit starts")
-        model.set_weights(parameters)
+        self.model.set_weights(parameters)
         
         # Train on the client's training data
-        model.fit(self.client_x_train, self.client_y_train, epochs=5, batch_size=32)
+        self.model.fit(self.client_x_train, self.client_y_train, epochs=5, batch_size=32)
         
         # Log information
         logger.info(f"Client {self.client_id}: Fit complete")
-        return model.get_weights(), len(self.client_x_train), {}
+        return self.model.get_weights(), len(self.client_x_train), {}
 
     def evaluate(self, parameters, config):
-        model.set_weights(parameters)
+        self.model.set_weights(parameters)
         
         # Evaluate on the client's evaluation data
-        loss, accuracy = model.evaluate(self.client_x_eval, self.client_y_eval)
+        loss, accuracy = self.model.evaluate(self.client_x_eval, self.client_y_eval)
         
         # Log information
         logger.info(f"Client {self.client_id}: Evaluation complete - Loss: {loss}, Accuracy: {accuracy}")
@@ -85,7 +81,7 @@ if __name__ == "__main__":
     try:
         # Parse command-line argument for client ID
         if len(sys.argv) != 2:
-            print("Usage: python script.py <client_id>")
+            print("Usage: python client.py <client_id>")
             sys.exit(1)
         
         client_id = int(sys.argv[1])
