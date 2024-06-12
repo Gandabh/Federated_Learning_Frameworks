@@ -1,0 +1,21 @@
+Metrics by Round
+Round 1:
+
+Accuracy: 0.535 (approximately 53.5%)
+Loss: 1.286
+Round 2:
+
+Accuracy: 0.721 (approximately 72.1%)
+Loss: 0.795
+Round 3:
+
+Accuracy: 0.849 (approximately 84.9%)
+Loss: 0.448
+Round 4:
+
+Accuracy: 0.898 (approximately 89.8%)
+Loss: 0.311
+Round 5:
+
+Accuracy: 0.922 (approximately 92.2%)
+Loss: 0.241
