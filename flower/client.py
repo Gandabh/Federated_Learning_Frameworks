@@ -3,6 +3,9 @@ import flwr as fl
 import tensorflow as tf
 import logging
 import sys
+import time
+import psutil
+import numpy as np
 
 # Set TensorFlow to log less
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -31,63 +34,59 @@ x_train, x_test = x_train / 255.0, x_test / 255.0  # Normalize pixel values to [
 
 # Define the Flower client class
 class CifarClient(fl.client.NumPyClient):
-    def __init__(self, client_id):
+    def __init__(self, client_id, num_clients):
         self.client_id = client_id
+        self.num_clients = num_clients
         self.model = create_custom_model()
         self.model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-
-        # Split the data into training and evaluation sets
-        num_clients = 3
-        idx_start = self.client_id * len(x_train) // num_clients
-        idx_end = (self.client_id + 1) * len(x_train) // num_clients
-
+        
+        # Split the data for this client
+        idx_start = self.client_id * len(x_train) // self.num_clients
+        idx_end = (self.client_id + 1) * len(x_train) // self.num_clients
         self.client_x_train = x_train[idx_start:idx_end]
         self.client_y_train = y_train[idx_start:idx_end]
-
-        idx_start = self.client_id * len(x_test) // num_clients
-        idx_end = (self.client_id + 1) * len(x_test) // num_clients
-
+        idx_start = self.client_id * len(x_test) // self.num_clients
+        idx_end = (self.client_id + 1) * len(x_test) // self.num_clients
         self.client_x_eval = x_test[idx_start:idx_end]
         self.client_y_eval = y_test[idx_start:idx_end]
 
     def get_parameters(self, config):
-        logger.info(f"Client {self.client_id}: Requesting parameters")
-        weights = self.model.get_weights()
-        logger.info(f"Client {self.client_id}: Finished parameters")
-        return weights
+        return self.model.get_weights()
 
     def fit(self, parameters, config):
-        logger.info(f"Client {self.client_id}: Fit starts")
         self.model.set_weights(parameters)
         
-        # Train on the client's training data
-        self.model.fit(self.client_x_train, self.client_y_train, epochs=5, batch_size=32)
+        # Train for 15 local epochs
+        history = self.model.fit(self.client_x_train, self.client_y_train, epochs=15, batch_size=32, verbose=0)
         
-        # Log information
-        logger.info(f"Client {self.client_id}: Fit complete")
-        return self.model.get_weights(), len(self.client_x_train), {}
+        # Log CPU and RAM usage
+        cpu_usage = psutil.cpu_percent()
+        ram_usage = psutil.virtual_memory().percent
+        logger.info(f"Client {self.client_id}: CPU usage: {cpu_usage}%, RAM usage: {ram_usage}%")
+        
+        return self.model.get_weights(), len(self.client_x_train), {"loss": history.history["loss"][-1], "accuracy": history.history["accuracy"][-1]}
 
     def evaluate(self, parameters, config):
         self.model.set_weights(parameters)
-        
-        # Evaluate on the client's evaluation data
-        loss, accuracy = self.model.evaluate(self.client_x_eval, self.client_y_eval)
-        
-        # Log information
-        logger.info(f"Client {self.client_id}: Evaluation complete - Loss: {loss}, Accuracy: {accuracy}")
+        loss, accuracy = self.model.evaluate(self.client_x_eval, self.client_y_eval, verbose=0)
         return loss, len(self.client_x_eval), {"accuracy": accuracy}
 
+def client_fn(cid: str) -> fl.client.Client:
+    # Parse client ID and create a client instance
+    client_id = int(cid)
+    return CifarClient(client_id=client_id, num_clients=NUM_CLIENTS)
+
 if __name__ == "__main__":
-    try:
-        # Parse command-line argument for client ID
-        if len(sys.argv) != 2:
-            print("Usage: python client.py <client_id>")
-            sys.exit(1)
-        
-        client_id = int(sys.argv[1])
-        
-        logger.info(f"Starting client {client_id}")
-        fl.client.start_numpy_client(server_address="127.0.0.1:8080", client=CifarClient(client_id))
-        logger.info(f"Client {client_id} finished")
-    except Exception as e:
-        logger.exception("An exception occurred:", exc_info=e)
+    NUM_CLIENTS = 100  #client size changed here 1, 10, 50, or 100 as needed
+    NUM_ROUNDS = 10
+
+    # Start the client
+    start_time = time.time()
+    fl.client.start_numpy_client(server_address="127.0.0.1:8080", client=client_fn(sys.argv[1]))
+    end_time = time.time()
+
+    # Log total training time
+    total_time = end_time - start_time
+    logger.info(f"Total training time: {total_time:.2f} seconds")
+
+    #Network utilization measured externally using tools like iftop
