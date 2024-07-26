@@ -23,11 +23,12 @@ import substrafl
 import os
 
 # Define constants
-N_CLIENTS = 3
+N_CLIENTS = 3 # 1,10,50,100
 NUM_UPDATES = 100
 BATCH_SIZE = 32
 NUM_ROUNDS = 10  # Increased the number of rounds
 SEED = 42
+
 
 # Setup clients
 client_0 = Client(client_name="org-1")
